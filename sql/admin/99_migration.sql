@@ -22,9 +22,9 @@ CREATE TABLE `billing_report` (
 	`competition_id` VARCHAR(255) NOT NULL,
 	`competition_title` TEXT NOT NULL,
 	`player_count` BIGINT NOT NULL,
-	`visiter_count` BIGINT NOT NULL,
+	`visitor_count` BIGINT NOT NULL,
 	`billing_player_yen` BIGINT NOT NULL,
-	`billing_visiter_yen` BIGINT NOT NULL,
+	`billing_visitor_yen` BIGINT NOT NULL,
 	`billing_yen` BIGINT NOT NULL,
 	INDEX `tenant_id_idx` (`tenant_id`),
 	UNIQUE KEY `tenant_competition` (`tenant_id`, `competition_id`)
