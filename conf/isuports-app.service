@@ -2,7 +2,7 @@
 Description=isuports-app
 After=network.target
 
-[Sercice]
+[Service]
 WorkingDirectory=/home/isucon/webapp/go
 
 User=isucon
