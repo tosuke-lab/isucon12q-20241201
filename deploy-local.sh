@@ -13,4 +13,4 @@ envsubst '$GIT_REV' <conf/my.conf | sudo tee /etc/mysql/mysql.conf.d/isuports.co
 
 make -C go isuports
 
-sudo systemctl restart nginx isuports-app
+sudo systemctl restart nginx mysql isuports-app
