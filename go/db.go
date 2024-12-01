@@ -37,33 +37,48 @@ func (p *PlayerRow) isFresh() bool {
 	return time.Now().Sub(updatedAt) < 2*time.Second
 }
 
+type playerEntry struct {
+	sync.Mutex
+	r *PlayerRow
+}
+
+func (p *playerEntry) retrieve(ctx context.Context, tenantDB dbOrTx, id string) (*PlayerRow, error) {
+	p.Lock()
+	defer p.Unlock()
+
+	if p.r != nil || !p.r.isFresh() {
+		pe, err := forceRetrievePlayer(ctx, tenantDB, id)
+		if err != nil {
+			p.r = nil
+			return nil, err
+		}
+		p.r = pe
+	}
+	return p.r, nil
+}
+
 var (
-	playerMap   = map[string]*PlayerRow{}
+	playerMap   = map[string]*playerEntry{}
 	playerMapMu = sync.RWMutex{}
 )
 
 // 参加者を取得する
 func retrievePlayer(ctx context.Context, tenantDB dbOrTx, id string) (*PlayerRow, error) {
 	playerMapMu.RLock()
-	p, ok := playerMap[id]
+	v, ok := playerMap[id]
 	playerMapMu.RUnlock()
-	if ok && p.isFresh() {
-		return p, nil
+	if ok {
+		return v.retrieve(ctx, tenantDB, id)
 	}
 
 	playerMapMu.Lock()
-	defer playerMapMu.Unlock()
-	p, ok = playerMap[id]
-	if ok && p.isFresh() {
-		return p, nil
+	v, ok = playerMap[id]
+	if !ok {
+		v = &playerEntry{}
+		playerMap[id] = v
 	}
-
-	p, err := forceRetrievePlayer(ctx, tenantDB, id)
-	if err != nil {
-		return nil, err
-	}
-	playerMap[id] = p
-	return p, nil
+	playerMapMu.Unlock()
+	return v.retrieve(ctx, tenantDB, id)
 }
 
 func forceRetrievePlayer(ctx context.Context, tenantDB dbOrTx, id string) (*PlayerRow, error) {
