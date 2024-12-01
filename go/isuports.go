@@ -1277,7 +1277,8 @@ func competitionRankingHandler(c echo.Context) error {
 
 	if _, err := adminDB.ExecContext(
 		ctx,
-		`INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?) WHERE NOT EXISTS (SELECT 1 WHERE player_id = ? AND tenant_id = ? AND competition_id = ?)`,
+		`INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+		 WHERE NOT EXISTS (SELECT 1 FROM visit_history WHERE player_id = ? AND tenant_id = ? AND competition_id = ?)`,
 		v.playerID, tenant.ID, competitionID, now, now, v.playerID, tenant.ID, competitionID,
 	); err != nil {
 		return fmt.Errorf(
