@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/labstack/echo/v4"
 )
@@ -30,8 +32,41 @@ type PlayerRow struct {
 	UpdatedAt      int64  `db:"updated_at"`
 }
 
+func (p *PlayerRow) isFresh() bool {
+	updatedAt := time.Unix(p.UpdatedAt, 0)
+	return time.Now().Sub(updatedAt) < 2*time.Second
+}
+
+var (
+	playerMap   = map[string]*PlayerRow{}
+	playerMapMu = sync.RWMutex{}
+)
+
 // 参加者を取得する
 func retrievePlayer(ctx context.Context, tenantDB dbOrTx, id string) (*PlayerRow, error) {
+	playerMapMu.RLock()
+	p, ok := playerMap[id]
+	playerMapMu.RUnlock()
+	if ok && p.isFresh() {
+		return p, nil
+	}
+
+	playerMapMu.Lock()
+	defer playerMapMu.Unlock()
+	p, ok = playerMap[id]
+	if ok && p.isFresh() {
+		return p, nil
+	}
+
+	p, err := forceRetrievePlayer(ctx, tenantDB, id)
+	if err != nil {
+		return nil, err
+	}
+	playerMap[id] = p
+	return p, nil
+}
+
+func forceRetrievePlayer(ctx context.Context, tenantDB dbOrTx, id string) (*PlayerRow, error) {
 	var p PlayerRow
 	if err := tenantDB.GetContext(ctx, &p, "SELECT * FROM player WHERE id = ?", id); err != nil {
 		return nil, fmt.Errorf("error Select player: id=%s, %w", id, err)
