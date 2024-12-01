@@ -1,9 +1,9 @@
 [Unit]
 Description=isuports-app
-After=network.target mysql.service cloud-config.service
+After=network.target
 
 [Sercice]
-WorkindDirectory=/home/isucon/webapp/go
+WorkingDirectory=/home/isucon/webapp/go
 
 User=isucon
 Group=isucon
