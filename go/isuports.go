@@ -1310,6 +1310,7 @@ func competitionRankingHandler(c echo.Context) error {
 			p.display_name AS player_display_name
 		FROM player_score AS ps
 		INNER JOIN player AS p ON p.id = ps.player_id
+		WHERE ps.tenant_id = ? AND ps.competition_id = ?
 		ORDER BY score DESC, row_num ASC
 		LIMIT 100
 		OFFSET ?`,
@@ -1319,7 +1320,7 @@ func competitionRankingHandler(c echo.Context) error {
 	); err != nil {
 		return fmt.Errorf("error Select player_score: tenantID=%d, competitionID=%s, %w", tenant.ID, competitionID, err)
 	}
-	for i, _ := range ranks {
+	for i := range ranks {
 		ranks[i].Rank = int64(i) + 1 + rankAfter
 	}
 
