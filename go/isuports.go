@@ -987,10 +987,6 @@ func competitionScoreHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid CSV headers")
 	}
 
-	// / DELETEしたタイミングで参照が来ると空っぽのランキングになるのでロックする
-	m := tenantLock(v.tenantID)
-	m.Lock()
-	defer m.Unlock()
 	var rowNum int64
 	playerScoreRows := []PlayerScoreRow{}
 	for {
@@ -1052,7 +1048,14 @@ func competitionScoreHandler(c echo.Context) error {
 		filteredRows = append(filteredRows, ps)
 	}
 
-	if _, err := tenantDB.ExecContext(
+	// / DELETEしたタイミングで参照が来ると空っぽのランキングになるのでロックする
+	tx, err := tenantDB.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("error player_score Beginx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(
 		ctx,
 		"DELETE FROM player_score WHERE tenant_id = ? AND competition_id = ?",
 		v.tenantID,
@@ -1060,12 +1063,17 @@ func competitionScoreHandler(c echo.Context) error {
 	); err != nil {
 		return fmt.Errorf("error Delete player_score: tenantID=%d, competitionID=%s, %w", v.tenantID, competitionID, err)
 	}
-	if _, err := tenantDB.NamedExecContext(
-		ctx,
-		"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
-		filteredRows,
-	); err != nil {
-		return fmt.Errorf("error Insert player_score: %w", err)
+	if len(filteredRows) > 0 {
+		if _, err := tx.NamedExecContext(
+			ctx,
+			"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
+			filteredRows,
+		); err != nil {
+			return fmt.Errorf("error Insert player_score: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error player_score Commit: %w", err)
 	}
 
 	return c.JSON(http.StatusOK, SuccessResult{
@@ -1169,10 +1177,6 @@ func playerHandler(c echo.Context) error {
 		}
 		return fmt.Errorf("error retrievePlayer: %w", err)
 	}
-	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
-	m := tenantLock(v.tenantID)
-	m.RLock()
-	defer m.RUnlock()
 
 	var psds []PlayerScoreDetail
 	if err := tenantDB.SelectContext(
