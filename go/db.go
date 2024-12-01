@@ -46,7 +46,7 @@ func (p *playerEntry) retrieve(ctx context.Context, tenantDB dbOrTx, id string) 
 	p.Lock()
 	defer p.Unlock()
 
-	if p.r != nil || !p.r.isFresh() {
+	if p.r == nil || !p.r.isFresh() {
 		pe, err := forceRetrievePlayer(ctx, tenantDB, id)
 		if err != nil {
 			p.r = nil
