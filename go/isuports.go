@@ -452,13 +452,14 @@ func validateTenantName(name string) error {
 }
 
 type BillingReport struct {
-	CompetitionID     string `json:"competition_id"`
-	CompetitionTitle  string `json:"competition_title"`
-	PlayerCount       int64  `json:"player_count"`        // スコアを登録した参加者数
-	VisitorCount      int64  `json:"visitor_count"`       // ランキングを閲覧だけした(スコアを登録していない)参加者数
-	BillingPlayerYen  int64  `json:"billing_player_yen"`  // 請求金額 スコアを登録した参加者分
-	BillingVisitorYen int64  `json:"billing_visitor_yen"` // 請求金額 ランキングを閲覧だけした(スコアを登録していない)参加者分
-	BillingYen        int64  `json:"billing_yen"`         // 合計請求金額
+	TenantID          int64  `json:"-" db:"tenant_id"`
+	CompetitionID     string `json:"competition_id" db:"competition_id"`
+	CompetitionTitle  string `json:"competition_title" db:"competition_title"`
+	PlayerCount       int64  `json:"player_count" db:"player_count"`               // スコアを登録した参加者数
+	VisitorCount      int64  `json:"visitor_count" db:"visitor_count"`             // ランキングを閲覧だけした(スコアを登録していない)参加者数
+	BillingPlayerYen  int64  `json:"billing_player_yen" db:"billing_player_yen"`   // 請求金額 スコアを登録した参加者分
+	BillingVisitorYen int64  `json:"billing_visitor_yen" db:"billing_visitor_yen"` // 請求金額 ランキングを閲覧だけした(スコアを登録していない)参加者分
+	BillingYen        int64  `json:"billing_yen" db:"billing_yen"`                 // 合計請求金額
 }
 
 type VisitHistoryRow struct {
@@ -479,6 +480,14 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 	comp, err := retrieveCompetition(ctx, tenantDB, competitonID)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieveCompetition: %w", err)
+	}
+	// 大会が終了している場合のみ請求金額が確定する
+	if !comp.FinishedAt.Valid {
+		return &BillingReport{
+			TenantID:         tenantID,
+			CompetitionID:    comp.ID,
+			CompetitionTitle: comp.Title,
+		}, nil
 	}
 
 	// ランキングにアクセスした参加者のIDを取得する
@@ -501,13 +510,6 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 		billingMap[vh.PlayerID] = "visitor"
 	}
 
-	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
-	fl, err := lockByTenantID(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("error flockByTenantID: %w", err)
-	}
-	defer fl.Close()
-
 	// スコアを登録した参加者のIDを取得する
 	scoredPlayerIDs := []string{}
 	if err := tenantDB.SelectContext(
@@ -525,17 +527,16 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 
 	// 大会が終了している場合のみ請求金額が確定するので計算する
 	var playerCount, visitorCount int64
-	if comp.FinishedAt.Valid {
-		for _, category := range billingMap {
-			switch category {
-			case "player":
-				playerCount++
-			case "visitor":
-				visitorCount++
-			}
+	for _, category := range billingMap {
+		switch category {
+		case "player":
+			playerCount++
+		case "visitor":
+			visitorCount++
 		}
 	}
 	return &BillingReport{
+		TenantID:          tenantID,
 		CompetitionID:     comp.ID,
 		CompetitionTitle:  comp.Title,
 		PlayerCount:       playerCount,
@@ -922,6 +923,19 @@ func competitionFinishHandler(c echo.Context) error {
 			now, now, id, err,
 		)
 	}
+
+	billingReport, err := billingReportByCompetition(ctx, tenantDB, v.tenantID, id)
+	if err != nil {
+		return fmt.Errorf("error billingReportByCompetition: %w", err)
+	}
+	if _, err := adminDB.NamedExecContext(
+		ctx,
+		`INSERT INTO billing_report (tenant_id, competition_id, competition_title, player_count, visitor_count, billing_player_yen, billing_visitor_yen, billing_yen) VALUES (:tenant_id, :competition_id, :competition_title, :player_count, :visitor_count, :billing_player_yen, :billing_visitor_yen, :billing_yen)`,
+		billingReport,
+	); err != nil {
+		return fmt.Errorf("error Insert billing_report: %w", err)
+	}
+
 	return c.JSON(http.StatusOK, SuccessResult{Status: true})
 }
 
@@ -1105,28 +1119,48 @@ func billingHandler(c echo.Context) error {
 	}
 	defer tenantDB.Close()
 
-	cs := []CompetitionRow{}
+	cs := []struct {
+		ID         string        `db:"id"`
+		Title      string        `db:"title"`
+		FInihsedAt sql.NullInt64 `db:"finished_at"`
+	}{}
 	if err := tenantDB.SelectContext(
 		ctx,
 		&cs,
-		"SELECT * FROM competition WHERE tenant_id=? ORDER BY created_at DESC",
+		"SELECT id, title, finished_at FROM competition WHERE tenant_id=? ORDER BY created_at DESC",
 		v.tenantID,
 	); err != nil {
 		return fmt.Errorf("error Select competition: %w", err)
 	}
-	tbrs := make([]BillingReport, 0, len(cs))
-	for _, comp := range cs {
-		report, err := billingReportByCompetition(ctx, tenantDB, v.tenantID, comp.ID)
-		if err != nil {
-			return fmt.Errorf("error billingReportByCompetition: %w", err)
+
+	var billReportsAvail []BillingReport
+	if err := adminDB.SelectContext(
+		ctx,
+		&billReportsAvail,
+		"SELECT * FROM billing_report WHERE tenant_id = ?",
+		v.tenantID,
+	); err != nil {
+		return fmt.Errorf("error Select billing_report: tenantID=%d, %w", v.tenantID, err)
+	}
+
+	brs := make([]BillingReport, 0, len(cs))
+	for _, c := range cs {
+		for _, br := range billReportsAvail {
+			if br.CompetitionID == c.ID {
+				brs = append(brs, br)
+				break
+			}
 		}
-		tbrs = append(tbrs, *report)
+		brs = append(brs, BillingReport{
+			CompetitionID:    c.ID,
+			CompetitionTitle: c.Title,
+		})
 	}
 
 	res := SuccessResult{
 		Status: true,
 		Data: BillingHandlerResult{
-			Reports: tbrs,
+			Reports: brs,
 		},
 	}
 	return c.JSON(http.StatusOK, res)
