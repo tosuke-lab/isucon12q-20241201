@@ -1,0 +1,23 @@
+[Unit]
+Description=isuports-app
+After=network.target mysql.service cloud-config.service
+
+[Sercice]
+WorkindDirectory=/home/isucon/webapp/go
+
+User=isucon
+Group=isucon
+ExecStart=/home/isucon/webapp/go/isuports
+Environment=ISUCON_DB_HOST=127.0.0.1
+Environment=ISUCON_DB_PORT=3306
+Environment=ISUCON_DB_NAME=isuports
+Environment=ISUCON_DB_USER=isucon
+Environment=ISUCON_DB_PASSWORD=isucon
+Environment=ISUCON_ADMIN_HOSTNAME=admin.t.isucon.pw
+Environment=ISUCON_BASE_HOSTNAME=.t.isucon.pw
+
+Restart=always
+Type=simple
+
+[Install]
+WantedBy=multi-user.target
