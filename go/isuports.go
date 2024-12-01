@@ -231,6 +231,22 @@ type Viewer struct {
 	tenantID   int64
 }
 
+var jwtKey interface{}
+
+func init() {
+	keyFilename := getEnv("ISUCON_JWT_KEY_FILE", "../public.pem")
+	keysrc, err := os.ReadFile(keyFilename)
+	if err != nil {
+		panic(fmt.Errorf("error os.ReadFile: keyFilename=%s: %w", keyFilename, err))
+	}
+	key, _, err := jwk.DecodePEM(keysrc)
+	if err != nil {
+		panic(fmt.Errorf("error jwk.DecodePEM: %w", err))
+	}
+
+	jwtKey = key
+}
+
 // リクエストヘッダをパースしてViewerを返す
 func parseViewer(c echo.Context) (*Viewer, error) {
 	cookie, err := c.Request().Cookie(cookieName)
@@ -242,19 +258,9 @@ func parseViewer(c echo.Context) (*Viewer, error) {
 	}
 	tokenStr := cookie.Value
 
-	keyFilename := getEnv("ISUCON_JWT_KEY_FILE", "../public.pem")
-	keysrc, err := os.ReadFile(keyFilename)
-	if err != nil {
-		return nil, fmt.Errorf("error os.ReadFile: keyFilename=%s: %w", keyFilename, err)
-	}
-	key, _, err := jwk.DecodePEM(keysrc)
-	if err != nil {
-		return nil, fmt.Errorf("error jwk.DecodePEM: %w", err)
-	}
-
 	token, err := jwt.Parse(
 		[]byte(tokenStr),
-		jwt.WithKey(jwa.RS256, key),
+		jwt.WithKey(jwa.RS256, jwtKey),
 	)
 	if err != nil {
 		return nil, echo.NewHTTPError(http.StatusUnauthorized, fmt.Errorf("error jwt.Parse: %s", err.Error()))
@@ -344,81 +350,10 @@ func retrieveTenantRowFromHeader(c echo.Context) (*TenantRow, error) {
 	return &tenant, nil
 }
 
-type TenantRow struct {
-	ID          int64  `db:"id"`
-	Name        string `db:"name"`
-	DisplayName string `db:"display_name"`
-	CreatedAt   int64  `db:"created_at"`
-	UpdatedAt   int64  `db:"updated_at"`
-}
-
 type dbOrTx interface {
 	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 	SelectContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
-}
-
-type PlayerRow struct {
-	TenantID       int64  `db:"tenant_id"`
-	ID             string `db:"id"`
-	DisplayName    string `db:"display_name"`
-	IsDisqualified bool   `db:"is_disqualified"`
-	CreatedAt      int64  `db:"created_at"`
-	UpdatedAt      int64  `db:"updated_at"`
-}
-
-// 参加者を取得する
-func retrievePlayer(ctx context.Context, tenantDB dbOrTx, id string) (*PlayerRow, error) {
-	var p PlayerRow
-	if err := tenantDB.GetContext(ctx, &p, "SELECT * FROM player WHERE id = ?", id); err != nil {
-		return nil, fmt.Errorf("error Select player: id=%s, %w", id, err)
-	}
-	return &p, nil
-}
-
-// 参加者を認可する
-// 参加者向けAPIで呼ばれる
-func authorizePlayer(ctx context.Context, tenantDB dbOrTx, id string) error {
-	player, err := retrievePlayer(ctx, tenantDB, id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusUnauthorized, "player not found")
-		}
-		return fmt.Errorf("error retrievePlayer from viewer: %w", err)
-	}
-	if player.IsDisqualified {
-		return echo.NewHTTPError(http.StatusForbidden, "player is disqualified")
-	}
-	return nil
-}
-
-type CompetitionRow struct {
-	TenantID   int64         `db:"tenant_id"`
-	ID         string        `db:"id"`
-	Title      string        `db:"title"`
-	FinishedAt sql.NullInt64 `db:"finished_at"`
-	CreatedAt  int64         `db:"created_at"`
-	UpdatedAt  int64         `db:"updated_at"`
-}
-
-// 大会を取得する
-func retrieveCompetition(ctx context.Context, tenantDB dbOrTx, id string) (*CompetitionRow, error) {
-	var c CompetitionRow
-	if err := tenantDB.GetContext(ctx, &c, "SELECT * FROM competition WHERE id = ?", id); err != nil {
-		return nil, fmt.Errorf("error Select competition: id=%s, %w", id, err)
-	}
-	return &c, nil
-}
-
-type PlayerScoreRow struct {
-	TenantID      int64  `db:"tenant_id"`
-	ID            string `db:"id"`
-	PlayerID      string `db:"player_id"`
-	CompetitionID string `db:"competition_id"`
-	Score         int64  `db:"score"`
-	RowNum        int64  `db:"row_num"`
-	CreatedAt     int64  `db:"created_at"`
-	UpdatedAt     int64  `db:"updated_at"`
 }
 
 // 排他ロックのためのファイル名を生成する
