@@ -12,6 +12,7 @@ ISUCON_DB_NAME=${ISUCON_DB_NAME:-isuports}
 files=(
 	"admin/10_schema.sql"
 	"admin/90_data.sql"
+	"admin/99_migration.sql"
 )
 for file in ${files[@]}; do
 	echo $file
