@@ -1145,16 +1145,17 @@ func billingHandler(c echo.Context) error {
 
 	brs := make([]BillingReport, 0, len(cs))
 	for _, c := range cs {
-		for _, br := range billReportsAvail {
-			if br.CompetitionID == c.ID {
-				brs = append(brs, br)
+		br := &BillingReport{
+			CompetitionID: c.ID,
+			CompetitionTitle: c.Title,
+		}
+		for _, r := range billReportsAvail {
+			if r.CompetitionID == c.ID {
+				br = &r
 				break
 			}
 		}
-		brs = append(brs, BillingReport{
-			CompetitionID:    c.ID,
-			CompetitionTitle: c.Title,
-		})
+		brs = append(brs, *br)
 	}
 
 	res := SuccessResult{
