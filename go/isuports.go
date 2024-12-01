@@ -988,11 +988,9 @@ func competitionScoreHandler(c echo.Context) error {
 	}
 
 	// / DELETEしたタイミングで参照が来ると空っぽのランキングになるのでロックする
-	fl, err := lockByTenantID(v.tenantID)
-	if err != nil {
-		return fmt.Errorf("error flockByTenantID: %w", err)
-	}
-	defer fl.Close()
+	m := tenantLock(v.tenantID)
+	m.Lock()
+	defer m.Unlock()
 	var rowNum int64
 	playerScoreRows := []PlayerScoreRow{}
 	for {
@@ -1008,16 +1006,6 @@ func competitionScoreHandler(c echo.Context) error {
 			return fmt.Errorf("row must have two columns: %#v", row)
 		}
 		playerID, scoreStr := row[0], row[1]
-		if _, err := retrievePlayer(ctx, tenantDB, playerID); err != nil {
-			// 存在しない参加者が含まれている
-			if errors.Is(err, sql.ErrNoRows) {
-				return echo.NewHTTPError(
-					http.StatusBadRequest,
-					fmt.Sprintf("player not found: %s", playerID),
-				)
-			}
-			return fmt.Errorf("error retrievePlayer: %w", err)
-		}
 		var score int64
 		if score, err = strconv.ParseInt(scoreStr, 10, 64); err != nil {
 			return echo.NewHTTPError(
@@ -1042,6 +1030,27 @@ func competitionScoreHandler(c echo.Context) error {
 		})
 	}
 
+	playerToRow := map[string]PlayerScoreRow{}
+	for _, ps := range playerScoreRows {
+		// rowNum は単調増加するので後勝ちで上書きすると最大のものが残る
+		playerToRow[ps.PlayerID] = ps
+	}
+	filteredRows := make([]PlayerScoreRow, 0, len(playerToRow))
+	for pid, ps := range playerToRow {
+		if _, err := retrievePlayer(ctx, tenantDB, pid); err != nil {
+			// 存在しない参加者が含まれている
+			if errors.Is(err, sql.ErrNoRows) {
+				return echo.NewHTTPError(
+					http.StatusBadRequest,
+					fmt.Sprintf("player not found: %s", pid),
+				)
+			}
+			return fmt.Errorf("error retrievePlayer: %w", err)
+		}
+
+		filteredRows = append(filteredRows, ps)
+	}
+
 	if _, err := tenantDB.ExecContext(
 		ctx,
 		"DELETE FROM player_score WHERE tenant_id = ? AND competition_id = ?",
@@ -1050,18 +1059,12 @@ func competitionScoreHandler(c echo.Context) error {
 	); err != nil {
 		return fmt.Errorf("error Delete player_score: tenantID=%d, competitionID=%s, %w", v.tenantID, competitionID, err)
 	}
-	for _, ps := range playerScoreRows {
-		if _, err := tenantDB.NamedExecContext(
-			ctx,
-			"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
-			ps,
-		); err != nil {
-			return fmt.Errorf(
-				"error Insert player_score: id=%s, tenant_id=%d, playerID=%s, competitionID=%s, score=%d, rowNum=%d, createdAt=%d, updatedAt=%d, %w",
-				ps.ID, ps.TenantID, ps.PlayerID, ps.CompetitionID, ps.Score, ps.RowNum, ps.CreatedAt, ps.UpdatedAt, err,
-			)
-
-		}
+	if _, err := tenantDB.NamedExecContext(
+		ctx,
+		"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
+		filteredRows,
+	); err != nil {
+		return fmt.Errorf("error Insert player_score: %w", err)
 	}
 
 	return c.JSON(http.StatusOK, SuccessResult{
@@ -1176,11 +1179,9 @@ func playerHandler(c echo.Context) error {
 	}
 
 	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
-	fl, err := lockByTenantID(v.tenantID)
-	if err != nil {
-		return fmt.Errorf("error flockByTenantID: %w", err)
-	}
-	defer fl.Close()
+	m := tenantLock(v.tenantID)
+	m.RLock()
+	defer m.RUnlock()
 	pss := make([]PlayerScoreRow, 0, len(cs))
 	for _, c := range cs {
 		ps := PlayerScoreRow{}
