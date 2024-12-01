@@ -792,6 +792,16 @@ func playerDisqualifiedHandler(c echo.Context) error {
 
 	playerID := c.Param("player_id")
 
+	p, err := retrievePlayer(ctx, tenantDB, playerID)
+	if err != nil {
+		// 存在しないプレイヤー
+		if errors.Is(err, sql.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusNotFound, "player not found")
+		}
+		return fmt.Errorf("error retrievePlayer: %w", err)
+	}
+	p.IsDisqualified = true
+
 	now := time.Now().Unix()
 	if _, err := tenantDB.ExecContext(
 		ctx,
@@ -802,14 +812,6 @@ func playerDisqualifiedHandler(c echo.Context) error {
 			"error Update player: isDisqualified=%t, updatedAt=%d, id=%s, %w",
 			true, now, playerID, err,
 		)
-	}
-	p, err := retrievePlayer(ctx, tenantDB, playerID)
-	if err != nil {
-		// 存在しないプレイヤー
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "player not found")
-		}
-		return fmt.Errorf("error retrievePlayer: %w", err)
 	}
 
 	res := PlayerDisqualifiedHandlerResult{
