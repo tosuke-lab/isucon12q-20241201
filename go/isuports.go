@@ -1037,6 +1037,7 @@ func competitionScoreHandler(c echo.Context) error {
 	}
 	filteredRows := make([]PlayerScoreRow, 0, len(playerToRow))
 	for pid, ps := range playerToRow {
+		// TODO
 		if _, err := retrievePlayer(ctx, tenantDB, pid); err != nil {
 			// 存在しない参加者が含まれている
 			if errors.Is(err, sql.ErrNoRows) {
@@ -1124,8 +1125,8 @@ func billingHandler(c echo.Context) error {
 }
 
 type PlayerScoreDetail struct {
-	CompetitionTitle string `json:"competition_title"`
-	Score            int64  `json:"score"`
+	CompetitionTitle string `json:"competition_title" db:"competition_title"`
+	Score            int64  `json:"score" db:"score"`
 }
 
 type PlayerHandlerResult struct {
@@ -1168,51 +1169,25 @@ func playerHandler(c echo.Context) error {
 		}
 		return fmt.Errorf("error retrievePlayer: %w", err)
 	}
-	cs := []CompetitionRow{}
-	if err := tenantDB.SelectContext(
-		ctx,
-		&cs,
-		"SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at ASC",
-		v.tenantID,
-	); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("error Select competition: %w", err)
-	}
-
 	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
 	m := tenantLock(v.tenantID)
 	m.RLock()
 	defer m.RUnlock()
-	pss := make([]PlayerScoreRow, 0, len(cs))
-	for _, c := range cs {
-		ps := PlayerScoreRow{}
-		if err := tenantDB.GetContext(
-			ctx,
-			&ps,
-			// 最後にCSVに登場したスコアを採用する = row_numが一番大きいもの
-			"SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? AND player_id = ? ORDER BY row_num DESC LIMIT 1",
-			v.tenantID,
-			c.ID,
-			p.ID,
-		); err != nil {
-			// 行がない = スコアが記録されてない
-			if errors.Is(err, sql.ErrNoRows) {
-				continue
-			}
-			return fmt.Errorf("error Select player_score: tenantID=%d, competitionID=%s, playerID=%s, %w", v.tenantID, c.ID, p.ID, err)
-		}
-		pss = append(pss, ps)
-	}
 
-	psds := make([]PlayerScoreDetail, 0, len(pss))
-	for _, ps := range pss {
-		comp, err := retrieveCompetition(ctx, tenantDB, ps.CompetitionID)
-		if err != nil {
-			return fmt.Errorf("error retrieveCompetition: %w", err)
-		}
-		psds = append(psds, PlayerScoreDetail{
-			CompetitionTitle: comp.Title,
-			Score:            ps.Score,
-		})
+	var psds []PlayerScoreDetail
+	if err := tenantDB.SelectContext(
+		ctx,
+		&psds,
+		`SELECT
+			c.title AS competition_title,
+			ps.score AS score
+		FROM competition AS c
+		INNER JOIN player_score AS ps ON ps.competition_id = c.id
+		WHERE c.tenant_id = ? AND ps.player_id = ?
+		ORDER BY c.created_at ASC`,
+		v.tenantID, p.ID,
+	); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("error Select player_score & competition: tenantID=%d, playerID=%s, %w", v.tenantID, p.ID, err)
 	}
 
 	res := SuccessResult{
