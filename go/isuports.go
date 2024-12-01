@@ -366,11 +366,11 @@ func (m *muCloser) Close() error {
 }
 
 var (
-	tenantLockMap = map[int64]*sync.Mutex{}
+	tenantLockMap = map[int64]*sync.RWMutex{}
 	tenantLockMu  = sync.RWMutex{}
 )
 
-func tenantLock(id int64) sync.Locker {
+func tenantLock(id int64) *sync.RWMutex {
 	tenantLockMu.RLock()
 	m, ok := tenantLockMap[id]
 	tenantLockMu.RUnlock()
@@ -384,7 +384,7 @@ func tenantLock(id int64) sync.Locker {
 	if ok {
 		return m
 	}
-	m = &sync.Mutex{}
+	m = &sync.RWMutex{}
 	tenantLockMap[id] = m
 	return m
 }
@@ -1318,11 +1318,10 @@ func competitionRankingHandler(c echo.Context) error {
 	}
 
 	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
-	fl, err := lockByTenantID(v.tenantID)
-	if err != nil {
-		return fmt.Errorf("error flockByTenantID: %w", err)
-	}
-	defer fl.Close()
+	m := tenantLock(v.tenantID)
+	m.RLock()
+	defer m.RUnlock()
+
 	pss := []PlayerScoreRow{}
 	if err := tenantDB.SelectContext(
 		ctx,
