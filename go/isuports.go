@@ -16,10 +16,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/gofrs/flock"
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -356,21 +356,44 @@ type dbOrTx interface {
 	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
 }
 
-// 排他ロックのためのファイル名を生成する
-func lockFilePath(id int64) string {
-	tenantDBDir := getEnv("ISUCON_TENANT_DB_DIR", "../tenant_db")
-	return filepath.Join(tenantDBDir, fmt.Sprintf("%d.lock", id))
+type muCloser struct {
+	sync.Locker
+}
+
+func (m *muCloser) Close() error {
+	m.Unlock()
+	return nil
+}
+
+var (
+	tenantLockMap = map[int64]*sync.Mutex{}
+	tenantLockMu  = sync.RWMutex{}
+)
+
+func tenantLock(id int64) sync.Locker {
+	tenantLockMu.RLock()
+	m, ok := tenantLockMap[id]
+	tenantLockMu.RUnlock()
+	if ok {
+		return m
+	}
+
+	tenantLockMu.Lock()
+	defer tenantLockMu.Unlock()
+	m, ok = tenantLockMap[id]
+	if ok {
+		return m
+	}
+	m = &sync.Mutex{}
+	tenantLockMap[id] = m
+	return m
 }
 
 // 排他ロックする
-func flockByTenantID(tenantID int64) (io.Closer, error) {
-	p := lockFilePath(tenantID)
-
-	fl := flock.New(p)
-	if err := fl.Lock(); err != nil {
-		return nil, fmt.Errorf("error flock.Lock: path=%s, %w", p, err)
-	}
-	return fl, nil
+func lockByTenantID(tenantID int64) (io.Closer, error) {
+	m := tenantLock(tenantID)
+	m.Lock()
+	return &muCloser{m}, nil
 }
 
 type TenantsAddHandlerResult struct {
@@ -500,7 +523,7 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 	}
 
 	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
-	fl, err := flockByTenantID(tenantID)
+	fl, err := lockByTenantID(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("error flockByTenantID: %w", err)
 	}
@@ -979,7 +1002,7 @@ func competitionScoreHandler(c echo.Context) error {
 	}
 
 	// / DELETEしたタイミングで参照が来ると空っぽのランキングになるのでロックする
-	fl, err := flockByTenantID(v.tenantID)
+	fl, err := lockByTenantID(v.tenantID)
 	if err != nil {
 		return fmt.Errorf("error flockByTenantID: %w", err)
 	}
@@ -1167,7 +1190,7 @@ func playerHandler(c echo.Context) error {
 	}
 
 	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
-	fl, err := flockByTenantID(v.tenantID)
+	fl, err := lockByTenantID(v.tenantID)
 	if err != nil {
 		return fmt.Errorf("error flockByTenantID: %w", err)
 	}
@@ -1295,7 +1318,7 @@ func competitionRankingHandler(c echo.Context) error {
 	}
 
 	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
-	fl, err := flockByTenantID(v.tenantID)
+	fl, err := lockByTenantID(v.tenantID)
 	if err != nil {
 		return fmt.Errorf("error flockByTenantID: %w", err)
 	}
