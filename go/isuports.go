@@ -924,19 +924,26 @@ func competitionFinishHandler(c echo.Context) error {
 		)
 	}
 
-	billingReport, err := billingReportByCompetition(ctx, tenantDB, v.tenantID, id)
+	if _, err := saveBillingReport(ctx, tenantDB, v.tenantID, id); err != nil {
+		return fmt.Errorf("error saveBillingReport: %w", err)
+	}
+
+	return c.JSON(http.StatusOK, SuccessResult{Status: true})
+}
+
+func saveBillingReport(ctx context.Context, tenantDB dbOrTx, tenantID int64, competitionID string) (*BillingReport, error) {
+	billingReport, err := billingReportByCompetition(ctx, tenantDB, tenantID, competitionID)
 	if err != nil {
-		return fmt.Errorf("error billingReportByCompetition: %w", err)
+		return nil, fmt.Errorf("error billingReportByCompetition: %w", err)
 	}
 	if _, err := adminDB.NamedExecContext(
 		ctx,
 		`INSERT INTO billing_report (tenant_id, competition_id, competition_title, player_count, visitor_count, billing_player_yen, billing_visitor_yen, billing_yen) VALUES (:tenant_id, :competition_id, :competition_title, :player_count, :visitor_count, :billing_player_yen, :billing_visitor_yen, :billing_yen)`,
 		billingReport,
 	); err != nil {
-		return fmt.Errorf("error Insert billing_report: %w", err)
+		return nil, fmt.Errorf("error Insert billing_report: %w", err)
 	}
-
-	return c.JSON(http.StatusOK, SuccessResult{Status: true})
+	return billingReport, nil
 }
 
 type ScoreHandlerResult struct {
@@ -1145,14 +1152,24 @@ func billingHandler(c echo.Context) error {
 
 	brs := make([]BillingReport, 0, len(cs))
 	for _, c := range cs {
-		br := &BillingReport{
-			CompetitionID: c.ID,
-			CompetitionTitle: c.Title,
+		if !c.FInihsedAt.Valid {
+			brs = append(brs, BillingReport{
+				CompetitionID:    c.ID,
+				CompetitionTitle: c.Title,
+			})
+			continue
 		}
+		var br *BillingReport
 		for _, r := range billReportsAvail {
 			if r.CompetitionID == c.ID {
 				br = &r
 				break
+			}
+		}
+		if br == nil {
+			br, err = saveBillingReport(ctx, tenantDB, v.tenantID, c.ID)
+			if err != nil {
+				return fmt.Errorf("error saveBillingReport: %w", err)
 			}
 		}
 		brs = append(brs, *br)
