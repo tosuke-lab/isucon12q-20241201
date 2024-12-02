@@ -2,6 +2,7 @@ package isuports
 
 import (
 	"fmt"
+	"log"
 	"os/exec"
 )
 
@@ -21,6 +22,7 @@ func executeQueryFile(path string) error {
 		getEnv("ISUCON_DB_NAME", "isuports"),
 		path,
 	)
+	log.Printf("executing query: %s", script)
 	cmd := exec.Command("sh", "-c", script)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to execute query file: %s: %s: %w", path, out, err)
