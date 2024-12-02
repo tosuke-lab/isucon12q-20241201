@@ -50,8 +50,7 @@ CREATE TABLE `player` (
 	`display_name` TEXT NOT NULL,
 	`is_disqualified` BOOLEAN NOT NULL,
 	`created_at` BIGINT NOT NULL,
-	`updated_at` BIGINT NOT NULL,
-	INDEX `tenant_id_idx` (`tenant_id`)
+	`updated_at` BIGINT NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4;
 
 CREATE TABLE `player_score` (
