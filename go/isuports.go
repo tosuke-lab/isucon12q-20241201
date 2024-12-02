@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1148,6 +1149,7 @@ func billingHandler(c echo.Context) error {
 type PlayerScoreDetail struct {
 	CompetitionTitle string `json:"competition_title" db:"competition_title"`
 	Score            int64  `json:"score" db:"score"`
+	CreatedAt        int64  `json:"-" db:"created_at"`
 }
 
 type PlayerHandlerResult struct {
@@ -1191,15 +1193,19 @@ func playerHandler(c echo.Context) error {
 		&psds,
 		`SELECT
 			c.title AS competition_title,
-			ps.score AS score
+			ps.score AS score,
+			c.created_at AS created_at
 		FROM competition AS c
 		INNER JOIN player_score AS ps ON ps.competition_id = c.id
-		WHERE c.tenant_id = ? AND ps.player_id = ?
-		ORDER BY c.created_at ASC`,
+		WHERE c.tenant_id = ? AND ps.player_id = ?`,
 		v.tenantID, p.ID,
 	); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("error Select player_score & competition: tenantID=%d, playerID=%s, %w", v.tenantID, p.ID, err)
 	}
+
+	sort.Slice(psds, func(i, j int) bool {
+		return psds[i].CreatedAt > psds[j].CreatedAt
+	})
 
 	res := SuccessResult{
 		Status: true,
