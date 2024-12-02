@@ -557,10 +557,11 @@ func billingReportByCompetition(ctx context.Context, tenantID int64, competitonI
 }
 
 type TenantWithBilling struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name"`
-	BillingYen  int64  `json:"billing"`
+	ID          string `json:"id" db:"-"`
+	IDRaw       int64  `json:"-" db:"id"`
+	Name        string `json:"name" db:"name"`
+	DisplayName string `json:"display_name" db:"display_name"`
+	BillingYen  int64  `json:"billing" db:"billing"`
 }
 
 type TenantsBillingHandlerResult struct {
@@ -587,7 +588,7 @@ func tenantsBillingHandler(c echo.Context) error {
 	}
 
 	before := c.QueryParam("before")
-	var beforeID int64
+	beforeID := int64(100000)
 	if before != "" {
 		var err error
 		beforeID, err = strconv.ParseInt(before, 10, 64)
@@ -604,46 +605,23 @@ func tenantsBillingHandler(c echo.Context) error {
 	//     scoreが登録されていないplayerでアクセスした人 * 10
 	//   を合計したものを
 	// テナントの課金とする
-	ts := []TenantRow{}
-	if err := adminDB.SelectContext(ctx, &ts, "SELECT * FROM tenant ORDER BY id DESC"); err != nil {
-		return fmt.Errorf("error Select tenant: %w", err)
+	var tenantBillings []TenantWithBilling
+	if err := adminDB.SelectContext(
+		ctx,
+		&tenantBillings,
+		"SELECT t.id AS id, t.name AS name, t.display_name AS display_name, SUM(br.billing_yen) AS billing "+
+		"FROM billing_report AS br "+
+		"LEFT JOIN tenant AS t ON t.id = br.tenant_id "+
+		"WHERE t.id < ? "+
+		"GROUP BY t.id "+
+		"ORDER BY t.id DESC "+
+		"LIMIT 10",
+		beforeID,
+	); err != nil {
+		return fmt.Errorf("error Select billing: %w", err)
 	}
-	tenantBillings := make([]TenantWithBilling, 0, len(ts))
-	for _, t := range ts {
-		if beforeID != 0 && beforeID <= t.ID {
-			continue
-		}
-		err := func(t TenantRow) error {
-			tb := TenantWithBilling{
-				ID:          strconv.FormatInt(t.ID, 10),
-				Name:        t.Name,
-				DisplayName: t.DisplayName,
-			}
-			cs := []CompetitionRow{}
-			if err := adminDB.SelectContext(
-				ctx,
-				&cs,
-				"SELECT * FROM competition WHERE tenant_id=?",
-				t.ID,
-			); err != nil {
-				return fmt.Errorf("failed to Select competition: %w", err)
-			}
-			for _, comp := range cs {
-				report, err := billingReportByCompetition(ctx, t.ID, comp.ID, time.Now().Unix())
-				if err != nil {
-					return fmt.Errorf("failed to billingReportByCompetition: %w", err)
-				}
-				tb.BillingYen += report.BillingYen
-			}
-			tenantBillings = append(tenantBillings, tb)
-			return nil
-		}(t)
-		if err != nil {
-			return err
-		}
-		if len(tenantBillings) >= 10 {
-			break
-		}
+	for i, t := range tenantBillings {
+		tenantBillings[i].ID = strconv.FormatInt(t.IDRaw, 10)
 	}
 	return c.JSON(http.StatusOK, SuccessResult{
 		Status: true,
