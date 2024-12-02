@@ -4,6 +4,10 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"path/filepath"
+	"sync"
+
+	"github.com/jmoiron/sqlx"
 )
 
 const (
@@ -40,5 +44,85 @@ func CleanDB() error {
 	if err := executeQueryFile(adminDBMigrationFilePath); err != nil {
 		return err
 	}
+
+	var err error
+	adminDB, err = connectAdminDB()
+	if err != nil {
+		return err
+	}
+
+	if err := migrateAllTenantDB(); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func migrateAllTenantDB() error {
+	var ts []TenantRow
+	if err := adminDB.Select(&ts, "SELECT * FROM tenant"); err != nil {
+		return fmt.Errorf("failed to select from tenant: %w", err)
+	}
+	var wg sync.WaitGroup
+	for _, t := range ts {
+		wg.Add(1)
+		go func(t TenantRow) {
+			defer wg.Done()
+			if err := migrateTenantDB(t.ID); err != nil {
+				log.Printf("failed to migrate tenant DB: tenant_id=%d: %s", t.ID, err)
+			}
+		}(t)
+	}
+	return nil
+}
+
+func migrateTenantDB(id int64) error {
+	tenantDB, err := connectToInitialTenantDB(id)
+	if err != nil {
+		return err
+	}
+
+	var cs []CompetitionRow
+	if err := tenantDB.Select(&cs, "SELECT * FROM competition"); err != nil {
+		return fmt.Errorf("failed to select from competition: %w", err)
+	}
+	if _, err := adminDB.NamedExec(
+		"INSERT INTO competition (tenant_id, id, title, finished_at, created_at, updated_at) VALUES (:tenant_id, :id, :title, :finished_at, :created_at, :updated_at)",
+		cs,
+	); err != nil {
+		return fmt.Errorf("failed to insert into competition: %w", err)
+	}
+
+	var ps []PlayerRow
+	if err := tenantDB.Select(&ps, "SELECT * FROM player"); err != nil {
+		return fmt.Errorf("failed to select from player: %w", err)
+	}
+	if _, err := adminDB.NamedExec(
+		"INSERT INTO player (tenant_id, id, display_name, is_disqualified, created_at, updated_at) VALUES (:tenant_id, :id, :display_name, :is_disqualified, :created_at, :updated_at)",
+		ps,
+	); err != nil {
+		return fmt.Errorf("failed to insert into player: %w", err)
+	}
+
+	var pss []PlayerScoreRow
+	if err := tenantDB.Select(&pss, "SELECT * FROM player_score"); err != nil {
+		return fmt.Errorf("failed to select from player_score: %w", err)
+	}
+	if _, err := adminDB.NamedExec(
+		"INSERT INTO player_score (tenant_id, id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:tenant_id, :id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
+		pss,
+	); err != nil {
+		return fmt.Errorf("failed to insert into player_score: %w", err)
+	}
+
+	return nil
+}
+
+func connectToInitialTenantDB(id int64) (*sqlx.DB, error) {
+	p := filepath.Join("../../initial_data", fmt.Sprintf("%d.db", id))
+	db, err := sqlx.Open(sqliteDriverName, fmt.Sprintf("file:%s?mode=r", p))
+	if err != nil {
+		return nil, fmt.Errorf("failed to open initial tenant DB: %s: %w", p, err)
+	}
+	return db, nil
 }
