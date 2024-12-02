@@ -1278,11 +1278,6 @@ func competitionRankingHandler(c echo.Context) error {
 		}
 	}
 
-	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
-	m := tenantLock(v.tenantID)
-	m.RLock()
-	defer m.RUnlock()
-
 	var ranks []CompetitionRank
 	if err := adminDB.SelectContext(
 		ctx,
@@ -1293,11 +1288,11 @@ func competitionRankingHandler(c echo.Context) error {
 			p.display_name AS player_display_name
 		FROM player_score AS ps
 		INNER JOIN player AS p ON p.id = ps.player_id
-		WHERE p.tenant_id = ? AND ps.competition_id = ?
-		ORDER BY score DESC, row_num ASC
+		WHERE ps.competition_id = ?
+		ORDER BY ps.score DESC, ps.row_num ASC
 		LIMIT 100
 		OFFSET ?`,
-		v.tenantID,
+		// competition がユニークだからテナントを評価しなくてもいい
 		competitionID,
 		rankAfter,
 	); err != nil {

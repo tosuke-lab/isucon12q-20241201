@@ -18,4 +18,6 @@ GROUP BY player_id, tenant_id, competition_id;
 
 ALTER TABLE player_score
 DROP INDEX competition_player_idx,
-ADD INDEX competition_player_idx (competition_id, player_id);
+ADD INDEX competition_player_idx (competition_id, player_id),
+DROP INDEX competition_score_row_idx,
+ADD INDEX competition_score_row_idx (competition_id, score DESC, row_num ASC);
