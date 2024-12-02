@@ -390,6 +390,11 @@ type TenantsAddHandlerResult struct {
 // テナントを追加する
 // POST /api/admin/tenants/add
 func tenantsAddHandler(c echo.Context) error {
+	if true {
+		c.Response().Header().Set("Retry-After", "10")
+		return c.String(http.StatusTooManyRequests, "maintenance")
+	}
+
 	v, err := parseViewer(c)
 	if err != nil {
 		return fmt.Errorf("error parseViewer: %w", err)
@@ -610,12 +615,12 @@ func tenantsBillingHandler(c echo.Context) error {
 		ctx,
 		&tenantBillings,
 		"SELECT t.id AS id, t.name AS name, t.display_name AS display_name, SUM(br.billing_yen) AS billing "+
-		"FROM billing_report AS br "+
-		"LEFT JOIN tenant AS t ON t.id = br.tenant_id "+
-		"WHERE t.id < ? "+
-		"GROUP BY t.id "+
-		"ORDER BY t.id DESC "+
-		"LIMIT 10",
+			"FROM billing_report AS br "+
+			"LEFT JOIN tenant AS t ON t.id = br.tenant_id "+
+			"WHERE t.id < ? "+
+			"GROUP BY t.id "+
+			"ORDER BY t.id DESC "+
+			"LIMIT 10",
 		beforeID,
 	); err != nil {
 		return fmt.Errorf("error Select billing: %w", err)
