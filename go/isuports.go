@@ -1086,8 +1086,11 @@ func isDeadLockError(err error) bool {
 	if err != nil {
 		return false
 	}
-	deadLockErr := &mysql.MySQLError{Number: 1213}
-	return errors.Is(err, deadLockErr)
+	var myErr *mysql.MySQLError
+	if errors.As(err, &myErr) {
+		return myErr.Number == 1213
+	}
+	return false
 }
 
 type BillingHandlerResult struct {
