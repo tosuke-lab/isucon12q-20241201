@@ -8,7 +8,7 @@ WorkingDirectory=/home/isucon/webapp/go
 User=isucon
 Group=isucon
 ExecStart=/home/isucon/webapp/go/isuports
-Environment=ISUCON_DB_HOST=127.0.0.1
+Environment=ISUCON_DB_HOST=192.168.0.13
 Environment=ISUCON_DB_PORT=3306
 Environment=ISUCON_DB_NAME=isuports
 Environment=ISUCON_DB_USER=isucon
