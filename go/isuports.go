@@ -465,6 +465,7 @@ type BillingReport struct {
 	BillingPlayerYen  int64  `json:"billing_player_yen" db:"billing_player_yen"`   // 請求金額 スコアを登録した参加者分
 	BillingVisitorYen int64  `json:"billing_visitor_yen" db:"billing_visitor_yen"` // 請求金額 ランキングを閲覧だけした(スコアを登録していない)参加者分
 	BillingYen        int64  `json:"billing_yen" db:"billing_yen"`                 // 合計請求金額
+	CreatedAt         int64  `json:"-" db:"created_at"`
 }
 
 type VisitHistoryRow struct {
@@ -549,6 +550,7 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 		BillingPlayerYen:  100 * playerCount, // スコアを登録した参加者は100円
 		BillingVisitorYen: 10 * visitorCount, // ランキングを閲覧だけした(スコアを登録していない)参加者は10円
 		BillingYen:        100*playerCount + 10*visitorCount,
+		CreatedAt:         time.Now().Unix(),
 	}, nil
 }
 
@@ -943,7 +945,7 @@ func saveBillingReport(ctx context.Context, tenantDB dbOrTx, tenantID int64, com
 	}
 	if _, err := adminDB.NamedExecContext(
 		ctx,
-		`INSERT INTO billing_report (tenant_id, competition_id, competition_title, player_count, visitor_count, billing_player_yen, billing_visitor_yen, billing_yen) VALUES (:tenant_id, :competition_id, :competition_title, :player_count, :visitor_count, :billing_player_yen, :billing_visitor_yen, :billing_yen)`,
+		`INSERT INTO billing_report (tenant_id, competition_id, competition_title, player_count, visitor_count, billing_player_yen, billing_visitor_yen, billing_yen, created_at) VALUES (:tenant_id, :competition_id, :competition_title, :player_count, :visitor_count, :billing_player_yen, :billing_visitor_yen, :billing_yen, :created_at)`,
 		billingReport,
 	); err != nil {
 		return nil, fmt.Errorf("error Insert billing_report: %w", err)
