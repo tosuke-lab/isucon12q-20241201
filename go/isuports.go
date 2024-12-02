@@ -1036,13 +1036,7 @@ func competitionScoreHandler(c echo.Context) error {
 	}
 
 	// / DELETEしたタイミングで参照が来ると空っぽのランキングになるのでロックする
-	tx, err := adminDB.BeginTxx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("error player_score Beginx: %w", err)
-	}
-	defer tx.Rollback()
-
-	if _, err := tx.ExecContext(
+	if _, err := adminDB.ExecContext(
 		ctx,
 		"DELETE FROM player_score WHERE tenant_id = ? AND competition_id = ?",
 		v.tenantID,
@@ -1051,16 +1045,13 @@ func competitionScoreHandler(c echo.Context) error {
 		return fmt.Errorf("error Delete player_score: tenantID=%d, competitionID=%s, %w", v.tenantID, competitionID, err)
 	}
 	if len(filteredRows) > 0 {
-		if _, err := tx.NamedExecContext(
+		if _, err := adminDB.NamedExecContext(
 			ctx,
 			"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
 			filteredRows,
 		); err != nil {
 			return fmt.Errorf("error Insert player_score: %w", err)
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("error player_score Commit: %w", err)
 	}
 
 	return c.JSON(http.StatusOK, SuccessResult{
