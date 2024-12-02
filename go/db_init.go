@@ -73,6 +73,7 @@ func migrateAllTenantDB() error {
 			}
 		}(t)
 	}
+	wg.Wait()
 	return nil
 }
 
