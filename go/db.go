@@ -136,3 +136,11 @@ type PlayerScoreRow struct {
 	CreatedAt     int64  `db:"created_at"`
 	UpdatedAt     int64  `db:"updated_at"`
 }
+
+type PlayerRankRow struct {
+	PlayerID             string `db:"player_id"`
+	CompetitionID        string `db:"competition_id"`
+	CompetitionTitle     string `db:"competition_title"`
+	CompetitionCreatedAt int64  `db:"competition_created_at"`
+	Score                int64  `db:"score"`
+}

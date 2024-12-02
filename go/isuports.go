@@ -1024,6 +1024,26 @@ func competitionScoreHandler(c echo.Context) error {
 		filteredRows = append(filteredRows, ps)
 	}
 
+	prs := make([]PlayerRankRow, 0, len(filteredRows))
+	for _, r := range filteredRows {
+		prs = append(prs, PlayerRankRow{
+			PlayerID:             r.PlayerID,
+			CompetitionID:        comp.ID,
+			CompetitionTitle:     comp.Title,
+			CompetitionCreatedAt: comp.CreatedAt,
+			Score:                r.Score,
+		})
+	}
+	if _, err := adminDB.NamedExecContext(
+		ctx,
+		"INSERT INTO player_rank (player_id, competition_id, competition_title, competition_created_at, score) "+
+			"VALUES (:player_id, :competition_id, :competition_title, :competition_created_at, :score) "+
+			"ON DUPLICATE KEY UPDATE score = VALUES(score)",
+		prs,
+	); err != nil {
+		return fmt.Errorf("error Insert player_rank: %w", err)
+	}
+
 	// / DELETEしたタイミングで参照が来ると空っぽのランキングになるのでロックする
 	for i := 0; i < 5; i++ {
 		tx, err := adminDB.BeginTxx(ctx, nil)
@@ -1191,13 +1211,11 @@ func playerHandler(c echo.Context) error {
 		ctx,
 		&psds,
 		`SELECT
-			c.title AS competition_title,
-			ps.score AS score,
-			c.created_at AS created_at
-		FROM competition AS c
-		INNER JOIN player_score AS ps ON ps.competition_id = c.id
-		WHERE c.tenant_id = ? AND ps.player_id = ?`,
-		v.tenantID, p.ID,
+			competition_title AS competition_title,
+			score AS score,
+			competition_created_at AS created_at
+		FROM player_rank
+		WHERE player_id = ?`, p.ID,
 	); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("error Select player_score & competition: tenantID=%d, playerID=%s, %w", v.tenantID, p.ID, err)
 	}
