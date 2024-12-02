@@ -35,15 +35,15 @@ func executeQueryFile(path string) error {
 }
 
 func CleanDB() error {
-	if err := executeQueryFile(adminDBSchemaFilePath); err != nil {
-		return err
-	}
-	if err := executeQueryFile(adminDBDataFilePath); err != nil {
-		return err
-	}
-	if err := executeQueryFile(adminDBMigrationFilePath); err != nil {
-		return err
-	}
+	// if err := executeQueryFile(adminDBSchemaFilePath); err != nil {
+	// 	return err
+	// }
+	// if err := executeQueryFile(adminDBDataFilePath); err != nil {
+	// 	return err
+	// }
+	// if err := executeQueryFile(adminDBMigrationFilePath); err != nil {
+	// 	return err
+	// }
 
 	var err error
 	adminDB, err = connectAdminDB()
@@ -120,7 +120,7 @@ func migrateTenantDB(id int64) error {
 
 func connectToInitialTenantDB(id int64) (*sqlx.DB, error) {
 	p := filepath.Join("../../initial_data", fmt.Sprintf("%d.db", id))
-	db, err := sqlx.Open(sqliteDriverName, fmt.Sprintf("file:%s?mode=r", p))
+	db, err := sqlx.Open(sqliteDriverName, fmt.Sprintf("file:%s?mode=ro", p))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open initial tenant DB: %s: %w", p, err)
 	}
