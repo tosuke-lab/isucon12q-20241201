@@ -111,9 +111,9 @@ func migrateTenantDB(id int64) error {
 	}
 	for {
 		var psss []PlayerScoreRow
-		if len(pss) > 100 {
-			psss = pss[:100]
-			pss = pss[100:]
+		if len(pss) > 1000 {
+			psss = pss[:1000]
+			pss = pss[1000:]
 		} else if len(pss) > 0 {
 			psss = pss
 			pss = nil

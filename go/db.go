@@ -42,12 +42,12 @@ type playerEntry struct {
 	r *PlayerRow
 }
 
-func (p *playerEntry) retrieve(ctx context.Context, tenantDB dbOrTx, id string) (*PlayerRow, error) {
+func (p *playerEntry) retrieve(ctx context.Context, id string) (*PlayerRow, error) {
 	p.Lock()
 	defer p.Unlock()
 
 	if p.r == nil || !p.r.isFresh() {
-		pe, err := forceRetrievePlayer(ctx, tenantDB, id)
+		pe, err := forceRetrievePlayer(ctx, id)
 		if err != nil {
 			p.r = nil
 			return nil, err
@@ -63,12 +63,12 @@ var (
 )
 
 // 参加者を取得する
-func retrievePlayer(ctx context.Context, tenantDB dbOrTx, id string) (*PlayerRow, error) {
+func retrievePlayer(ctx context.Context, id string) (*PlayerRow, error) {
 	playerMapMu.RLock()
 	v, ok := playerMap[id]
 	playerMapMu.RUnlock()
 	if ok {
-		return v.retrieve(ctx, tenantDB, id)
+		return v.retrieve(ctx, id)
 	}
 
 	playerMapMu.Lock()
@@ -78,12 +78,12 @@ func retrievePlayer(ctx context.Context, tenantDB dbOrTx, id string) (*PlayerRow
 		playerMap[id] = v
 	}
 	playerMapMu.Unlock()
-	return v.retrieve(ctx, tenantDB, id)
+	return v.retrieve(ctx, id)
 }
 
-func forceRetrievePlayer(ctx context.Context, tenantDB dbOrTx, id string) (*PlayerRow, error) {
+func forceRetrievePlayer(ctx context.Context, id string) (*PlayerRow, error) {
 	var p PlayerRow
-	if err := tenantDB.GetContext(ctx, &p, "SELECT * FROM player WHERE id = ?", id); err != nil {
+	if err := adminDB.GetContext(ctx, &p, "SELECT * FROM player WHERE id = ?", id); err != nil {
 		return nil, fmt.Errorf("error Select player: id=%s, %w", id, err)
 	}
 	return &p, nil
@@ -91,8 +91,8 @@ func forceRetrievePlayer(ctx context.Context, tenantDB dbOrTx, id string) (*Play
 
 // 参加者を認可する
 // 参加者向けAPIで呼ばれる
-func authorizePlayer(ctx context.Context, tenantDB dbOrTx, id string) error {
-	player, err := retrievePlayer(ctx, tenantDB, id)
+func authorizePlayer(ctx context.Context, id string) error {
+	player, err := retrievePlayer(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusUnauthorized, "player not found")
@@ -117,9 +117,9 @@ type CompetitionRow struct {
 }
 
 // 大会を取得する
-func retrieveCompetition(ctx context.Context, tenantDB dbOrTx, id string) (*CompetitionRow, error) {
+func retrieveCompetition(ctx context.Context, tenantID int64, id string) (*CompetitionRow, error) {
 	var c CompetitionRow
-	if err := tenantDB.GetContext(ctx, &c, "SELECT * FROM competition WHERE id = ?", id); err != nil {
+	if err := adminDB.GetContext(ctx, &c, "SELECT * FROM competition WHERE tenant_id = ? AND id = ?", tenantID, id); err != nil {
 		return nil, fmt.Errorf("error Select competition: id=%s, %w", id, err)
 	}
 	return &c, nil
