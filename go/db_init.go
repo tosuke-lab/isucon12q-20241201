@@ -14,7 +14,7 @@ const (
 
 func executeQueryFile(path string) error {
 	script := fmt.Sprintf(
-		"mysql -u\"%s\" -p\"%s\" --host\"%s\" --port\"%s\" %s < %s",
+		"mysql -u\"%s\" -p\"%s\" --host \"%s\" --port \"%s\" %s < %s",
 		getEnv("ISUCON_DB_USER", "isucon"),
 		getEnv("ISUCON_DB_PASSWORD", "isucon"),
 		getEnv("ISUCON_DB_HOST", "127.0.0.1"),
