@@ -974,6 +974,7 @@ func competitionScoreHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid CSV headers")
 	}
 
+	now := time.Now().Unix()
 	var rowNum int64
 	playerScoreRows := []PlayerScoreRow{}
 	for {
@@ -1000,7 +1001,6 @@ func competitionScoreHandler(c echo.Context) error {
 		if err != nil {
 			return fmt.Errorf("error dispenseID: %w", err)
 		}
-		now := time.Now().Unix()
 		playerScoreRows = append(playerScoreRows, PlayerScoreRow{
 			ID:            id,
 			TenantID:      v.tenantID,
@@ -1293,7 +1293,7 @@ func competitionRankingHandler(c echo.Context) error {
 			p.display_name AS player_display_name
 		FROM player_score AS ps
 		INNER JOIN player AS p ON p.id = ps.player_id
-		WHERE ps.tenant_id = ? AND ps.competition_id = ?
+		WHERE p.tenant_id = ? AND ps.competition_id = ?
 		ORDER BY score DESC, row_num ASC
 		LIMIT 100
 		OFFSET ?`,
