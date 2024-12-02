@@ -109,11 +109,21 @@ func migrateTenantDB(id int64) error {
 	if err := tenantDB.Select(&pss, "SELECT * FROM player_score"); err != nil {
 		return fmt.Errorf("failed to select from player_score: %w", err)
 	}
-	if _, err := adminDB.NamedExec(
-		"INSERT INTO player_score (tenant_id, id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:tenant_id, :id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
-		pss,
-	); err != nil {
-		return fmt.Errorf("failed to insert into player_score: %w", err)
+	for {
+		var psss []PlayerScoreRow
+		if len(pss) > 100 {
+			psss = pss[:100]
+			pss = pss[100:]
+		} else {
+			psss = pss
+			pss = nil
+		}
+		if _, err := adminDB.NamedExec(
+			"INSERT INTO player_score (tenant_id, id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:tenant_id, :id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
+			psss,
+		); err != nil {
+			return fmt.Errorf("failed to insert into player_score: %w", err)
+		}
 	}
 
 	return nil
