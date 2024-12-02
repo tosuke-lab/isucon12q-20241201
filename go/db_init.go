@@ -114,9 +114,11 @@ func migrateTenantDB(id int64) error {
 		if len(pss) > 100 {
 			psss = pss[:100]
 			pss = pss[100:]
-		} else {
+		} else if len(pss) > 0 {
 			psss = pss
 			pss = nil
+		} else {
+			break
 		}
 		if _, err := adminDB.NamedExec(
 			"INSERT INTO player_score (tenant_id, id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:tenant_id, :id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
@@ -125,6 +127,8 @@ func migrateTenantDB(id int64) error {
 			return fmt.Errorf("failed to insert into player_score: %w", err)
 		}
 	}
+
+	log.Printf("migrated tenant DB: tenant_id=%d", id)
 
 	return nil
 }
