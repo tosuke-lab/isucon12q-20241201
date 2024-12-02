@@ -1074,7 +1074,7 @@ func competitionScoreHandler(c echo.Context) error {
 			Data:   ScoreHandlerResult{Rows: int64(len(playerScoreRows))},
 		})
 	}
-	return fmt.Errorf("error player_score: %w", errors.Join(errs...))
+	return fmt.Errorf("error player_score: %w", errs[0])
 }
 
 type BillingHandlerResult struct {
