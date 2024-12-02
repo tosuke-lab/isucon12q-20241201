@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -390,8 +391,9 @@ type TenantsAddHandlerResult struct {
 // テナントを追加する
 // POST /api/admin/tenants/add
 func tenantsAddHandler(c echo.Context) error {
-	if true {
-		c.Response().Header().Set("Retry-After", "10")
+	// TODO: 負荷がまともになったら外す
+	if rand.Intn(2) == 0 {
+		c.Response().Header().Set("Retry-After", "1")
 		return c.String(http.StatusTooManyRequests, "maintenance")
 	}
 
