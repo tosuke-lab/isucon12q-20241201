@@ -35,15 +35,15 @@ func executeQueryFile(path string) error {
 }
 
 func CleanDB() error {
-	// if err := executeQueryFile(adminDBSchemaFilePath); err != nil {
-	// 	return err
-	// }
-	// if err := executeQueryFile(adminDBDataFilePath); err != nil {
-	// 	return err
-	// }
-	// if err := executeQueryFile(adminDBMigrationFilePath); err != nil {
-	// 	return err
-	// }
+	if err := executeQueryFile(adminDBSchemaFilePath); err != nil {
+		return err
+	}
+	if err := executeQueryFile(adminDBDataFilePath); err != nil {
+		return err
+	}
+	if err := executeQueryFile(adminDBMigrationFilePath); err != nil {
+		return err
+	}
 
 	var err error
 	adminDB, err = connectAdminDB()
@@ -106,17 +106,34 @@ func migrateTenantDB(id int64) error {
 	}
 
 	var pss []PlayerScoreRow
-	if err := tenantDB.Select(&pss, "SELECT * FROM player_score"); err != nil {
+	if err := tenantDB.Select(&pss, "SELECT * FROM player_score ORDER BY row_num DESC"); err != nil {
 		return fmt.Errorf("failed to select from player_score: %w", err)
 	}
+	type key struct {
+		playerID      string
+		competitionID string
+	}
+	pssMap := map[key]PlayerScoreRow{}
+	for _, ps := range pss {
+		k := key{playerID: ps.PlayerID, competitionID: ps.CompetitionID}
+		if _, ok := pssMap[k]; ok {
+			continue
+		}
+		pssMap[k] = ps
+	}
+	fpss := make([]PlayerScoreRow, 0, len(pssMap))
+	for _, ps := range pssMap {
+		fpss = append(fpss, ps)
+	}
+
 	for {
 		var psss []PlayerScoreRow
-		if len(pss) > 1000 {
-			psss = pss[:1000]
-			pss = pss[1000:]
-		} else if len(pss) > 0 {
-			psss = pss
-			pss = nil
+		if len(fpss) > 1000 {
+			psss = fpss[:1000]
+			fpss = fpss[1000:]
+		} else if len(fpss) > 0 {
+			psss = fpss
+			fpss = nil
 		} else {
 			break
 		}
