@@ -1141,14 +1141,14 @@ func billingHandler(c echo.Context) error {
 			})
 			continue
 		}
-		var br *BillingReport
+		var br BillingReport
 		for _, r := range billReportsAvail {
 			if r.CompetitionID == c.ID {
-				br = &r
+				br = r
 				break
 			}
 		}
-		brs = append(brs, *br)
+		brs = append(brs, br)
 	}
 
 	res := SuccessResult{
