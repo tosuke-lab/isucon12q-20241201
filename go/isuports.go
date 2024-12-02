@@ -1038,37 +1038,56 @@ func competitionScoreHandler(c echo.Context) error {
 	}
 
 	// / DELETEしたタイミングで参照が来ると空っぽのランキングになるのでロックする
-	tx, err := adminDB.BeginTxx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("error player_score Beginx: %w", err)
-	}
-	defer tx.Rollback()
-
-	if _, err := tx.ExecContext(
-		ctx,
-		"DELETE FROM player_score WHERE tenant_id = ? AND competition_id = ?",
-		v.tenantID,
-		competitionID,
-	); err != nil {
-		return fmt.Errorf("error Delete player_score: tenantID=%d, competitionID=%s, %w", v.tenantID, competitionID, err)
-	}
-	if len(filteredRows) > 0 {
-		if _, err := tx.NamedExecContext(
-			ctx,
-			"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
-			filteredRows,
-		); err != nil {
-			return fmt.Errorf("error Insert player_score: %w", err)
+	for i := 0; i < 5; i++ {
+		tx, err := adminDB.BeginTxx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("error player_score Beginx: %w", err)
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("error player_score Commit: %w", err)
-	}
 
-	return c.JSON(http.StatusOK, SuccessResult{
-		Status: true,
-		Data:   ScoreHandlerResult{Rows: int64(len(playerScoreRows))},
-	})
+		if _, err := tx.ExecContext(
+			ctx,
+			"DELETE FROM player_score WHERE tenant_id = ? AND competition_id = ?",
+			v.tenantID,
+			competitionID,
+		); err != nil {
+			tx.Rollback()
+			if isDeadLockError(err) {
+				continue
+			}
+			return fmt.Errorf("error Delete player_score: tenantID=%d, competitionID=%s, %w", v.tenantID, competitionID, err)
+		}
+		if len(filteredRows) > 0 {
+			if _, err := tx.NamedExecContext(
+				ctx,
+				"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
+				filteredRows,
+			); err != nil {
+				tx.Rollback()
+				if isDeadLockError(err) {
+					continue
+				}
+				return fmt.Errorf("error Insert player_score: %w", err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("error player_score Commit: %w", err)
+		}
+
+		return c.JSON(http.StatusOK, SuccessResult{
+			Status: true,
+			Data:   ScoreHandlerResult{Rows: int64(len(playerScoreRows))},
+		})
+	}
+	return fmt.Errorf("error player_score Commit: %w", err)
+}
+
+func isDeadLockError(err error) bool {
+	if err != nil {
+		return false
+	}
+	deadLockErr := &mysql.MySQLError{Number: 1213}
+	return errors.Is(err, deadLockErr)
 }
 
 type BillingHandlerResult struct {
