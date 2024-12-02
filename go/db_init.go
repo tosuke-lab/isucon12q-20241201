@@ -165,7 +165,7 @@ func migrateBillingReport() error {
 	}
 
 	for _, c := range cs {
-		if _, err := saveBillingReport(ctx, c.TenantID, c.ID); err != nil {
+		if _, err := saveBillingReport(ctx, c.TenantID, c.ID, c.FinishedAt.Int64); err != nil {
 			return err
 		}
 	}
