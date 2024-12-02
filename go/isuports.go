@@ -1036,45 +1036,37 @@ func competitionScoreHandler(c echo.Context) error {
 	}
 
 	// / DELETEしたタイミングで参照が来ると空っぽのランキングになるのでロックする
-	var errs []error
-	for i := 0; i < 3; i++ {
-		tx, err := adminDB.BeginTxx(ctx, nil)
-		if err != nil {
-			return fmt.Errorf("error player_score Beginx: %w", err)
-		}
-
-		if _, err := tx.ExecContext(
-			ctx,
-			"DELETE FROM player_score WHERE tenant_id = ? AND competition_id = ?",
-			v.tenantID,
-			competitionID,
-		); err != nil {
-			tx.Rollback()
-			errs = append(errs, fmt.Errorf("error Delete player_score: tenantID=%d, competitionID=%s, %w", v.tenantID, competitionID, err))
-			continue
-		}
-		if len(filteredRows) > 0 {
-			if _, err := tx.NamedExecContext(
-				ctx,
-				"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
-				filteredRows,
-			); err != nil {
-				tx.Rollback()
-				errs = append(errs, fmt.Errorf("error Insert player_score: %w", err))
-				continue
-			}
-		}
-		if err := tx.Commit(); err != nil {
-			tx.Rollback()
-			errs = append(errs, fmt.Errorf("error player_score Commit: %w", err))
-			continue
-		}
-		return c.JSON(http.StatusOK, SuccessResult{
-			Status: true,
-			Data:   ScoreHandlerResult{Rows: int64(len(playerScoreRows))},
-		})
+	tx, err := adminDB.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("error player_score Beginx: %w", err)
 	}
-	return fmt.Errorf("error player_score: %w", errors.Join(errs...))
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(
+		ctx,
+		"DELETE FROM player_score WHERE tenant_id = ? AND competition_id = ?",
+		v.tenantID,
+		competitionID,
+	); err != nil {
+		return fmt.Errorf("error Delete player_score: tenantID=%d, competitionID=%s, %w", v.tenantID, competitionID, err)
+	}
+	if len(filteredRows) > 0 {
+		if _, err := tx.NamedExecContext(
+			ctx,
+			"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
+			filteredRows,
+		); err != nil {
+			return fmt.Errorf("error Insert player_score: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error player_score Commit: %w", err)
+	}
+
+	return c.JSON(http.StatusOK, SuccessResult{
+		Status: true,
+		Data:   ScoreHandlerResult{Rows: int64(len(playerScoreRows))},
+	})
 }
 
 type BillingHandlerResult struct {
