@@ -1148,12 +1148,6 @@ func billingHandler(c echo.Context) error {
 				break
 			}
 		}
-		if br == nil {
-			br, err = saveBillingReport(ctx, v.tenantID, c.ID, c.FInihsedAt.Int64)
-			if err != nil {
-				return fmt.Errorf("error saveBillingReport: %w", err)
-			}
-		}
 		brs = append(brs, *br)
 	}
 
