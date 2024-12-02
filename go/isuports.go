@@ -1083,12 +1083,8 @@ func competitionScoreHandler(c echo.Context) error {
 }
 
 func isDeadLockError(err error) bool {
-	if err != nil {
-		return false
-	}
-	var myErr *mysql.MySQLError
-	if errors.As(err, &myErr) {
-		return myErr.Number == 1213
+	if merr, ok := err.(*mysql.MySQLError); ok && merr.Number == 1213 {
+		return true
 	}
 	return false
 }
