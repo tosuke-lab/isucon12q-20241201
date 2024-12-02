@@ -9,7 +9,7 @@ sudo systemctl daemon-reload
 
 envsubst '$GIT_REV' <conf/nginx.conf | sudo tee /etc/nginx/nginx.conf >/dev/null
 sudo cp conf/nginx-isuports.conf /etc/nginx/sites-available/isuports.conf
-envsubst '$GIT_REV' <conf/my.cnf | sudo tee /etc/mysql/mysql.conf.d/mysql.cnf >/dev/null
+envsubst '$GIT_REV' <conf/my.cnf | sudo tee /etc/mysql/mysql.conf.d/zzzzz.cnf >/dev/null
 
 make -C go isuports dbclean
 
