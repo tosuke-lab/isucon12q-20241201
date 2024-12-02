@@ -484,7 +484,7 @@ type VisitHistorySummaryRow struct {
 }
 
 // 大会ごとの課金レポートを計算する
-func billingReportByCompetition(ctx context.Context, tenantID int64, competitonID string) (*BillingReport, error) {
+func billingReportByCompetition(ctx context.Context, tenantID int64, competitonID string, createdAt int64) (*BillingReport, error) {
 	comp, err := retrieveCompetition(ctx, tenantID, competitonID)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieveCompetition: %w", err)
@@ -552,7 +552,7 @@ func billingReportByCompetition(ctx context.Context, tenantID int64, competitonI
 		BillingPlayerYen:  100 * playerCount, // スコアを登録した参加者は100円
 		BillingVisitorYen: 10 * visitorCount, // ランキングを閲覧だけした(スコアを登録していない)参加者は10円
 		BillingYen:        100*playerCount + 10*visitorCount,
-		CreatedAt:         time.Now().Unix(),
+		CreatedAt:         createdAt,
 	}, nil
 }
 
@@ -629,7 +629,7 @@ func tenantsBillingHandler(c echo.Context) error {
 				return fmt.Errorf("failed to Select competition: %w", err)
 			}
 			for _, comp := range cs {
-				report, err := billingReportByCompetition(ctx, t.ID, comp.ID)
+				report, err := billingReportByCompetition(ctx, t.ID, comp.ID, time.Now().Unix())
 				if err != nil {
 					return fmt.Errorf("failed to billingReportByCompetition: %w", err)
 				}
@@ -898,15 +898,17 @@ func competitionFinishHandler(c echo.Context) error {
 		)
 	}
 
-	if _, err := saveBillingReport(ctx, v.tenantID, id); err != nil {
-		return fmt.Errorf("error saveBillingReport: %w", err)
-	}
+	go func() {
+		if _, err := saveBillingReport(context.Background(), v.tenantID, id, now); err != nil {
+			log.Printf("error saveBillingReport: %v", err)
+		}
+	}()
 
 	return c.JSON(http.StatusOK, SuccessResult{Status: true})
 }
 
-func saveBillingReport(ctx context.Context, tenantID int64, competitionID string) (*BillingReport, error) {
-	billingReport, err := billingReportByCompetition(ctx, tenantID, competitionID)
+func saveBillingReport(ctx context.Context, tenantID int64, competitionID string, createdAt int64) (*BillingReport, error) {
+	billingReport, err := billingReportByCompetition(ctx, tenantID, competitionID, createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("error billingReportByCompetition: %w", err)
 	}
@@ -1147,7 +1149,7 @@ func billingHandler(c echo.Context) error {
 			}
 		}
 		if br == nil {
-			br, err = saveBillingReport(ctx, v.tenantID, c.ID)
+			br, err = saveBillingReport(ctx, v.tenantID, c.ID, c.FInihsedAt.Int64)
 			if err != nil {
 				return fmt.Errorf("error saveBillingReport: %w", err)
 			}

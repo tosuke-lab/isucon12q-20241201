@@ -1,6 +1,7 @@
 package isuports
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os/exec"
@@ -74,6 +75,10 @@ func migrateAllTenantDB() error {
 		}(t)
 	}
 	wg.Wait()
+
+	if err := migrateBillingReport(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -147,6 +152,23 @@ func migrateTenantDB(id int64) error {
 
 	log.Printf("migrated tenant DB: tenant_id=%d", id)
 
+	return nil
+}
+
+func migrateBillingReport() error {
+	ctx := context.Background()
+	var cs []CompetitionRow
+	if err := adminDB.SelectContext(
+		ctx, &cs, "SELECT * FROM competition WHERE finished_at IS NOT NULL",
+	); err != nil {
+		return fmt.Errorf("failed to select from competition: %w", err)
+	}
+
+	for _, c := range cs {
+		if _, err := saveBillingReport(ctx, c.TenantID, c.ID); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
