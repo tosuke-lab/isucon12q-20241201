@@ -65,6 +65,7 @@ func adminDBConfig() *mysql.Config {
 	config.Passwd = getEnv("ISUCON_DB_PASSWORD", "isucon")
 	config.DBName = getEnv("ISUCON_DB_NAME", "isuports")
 	config.ParseTime = true
+	config.InterpolateParams = true
 	return config
 }
 
@@ -173,7 +174,7 @@ func Run() {
 		e.Logger.Fatalf("failed to connect db: %v", err)
 		return
 	}
-	adminDB.SetMaxOpenConns(10)
+	adminDB.SetMaxOpenConns(1000)
 	defer adminDB.Close()
 
 	port := getEnv("SERVER_APP_PORT", "3000")
